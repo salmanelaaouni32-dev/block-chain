@@ -1,0 +1,22 @@
+@"
+# Dépendances
+node_modules/
+contracts/node_modules/
+frontend/node_modules/
+
+# Build & artefacts Hardhat / Vite
+contracts/artifacts/
+contracts/cache/
+frontend/dist/
+
+# Variables d'environnement et secrets
+.env
+.env.*
+contracts/.env
+frontend/.env
+
+# Logs et fichiers système
+*.log
+.DS_Store
+Thumbs.db
+"@ | Set-Content -Path .gitignore -Encoding UTF8
