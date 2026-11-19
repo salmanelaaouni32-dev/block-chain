@@ -10,9 +10,12 @@ export default function App() {
   const [loading, setLoading] = useState(false);
 
   // Recherche / Vérification
-  const [searchMode, setSearchMode] = useState("studentId"); // "studentId" | "certId"
+  const [searchMode, setSearchMode] = useState("studentId");
   const [searchValue, setSearchValue] = useState("");
   const [certResult, setCertResult] = useState(null);
+
+  // Mes certificats (Étudiant connecté)
+  const [myCertificates, setMyCertificates] = useState([]);
 
   // Formulaire d'émission (mintCertificate)
   const [mintForm, setMintForm] = useState({
@@ -40,12 +43,47 @@ export default function App() {
     }
   }
 
+  async function loadMyCertificates(holderAddress) {
+    if (!holderAddress) {
+      setMyCertificates([]);
+      return;
+    }
+    try {
+      const logs = await publicClient.getContractEvents({
+        address: CONTRACT_ADDRESS,
+        abi: CONTRACT_ABI,
+        eventName: "CertificateMinted",
+        args: { recipient: holderAddress },
+        fromBlock: 0n,
+        toBlock: "latest",
+      });
+
+      const list = await Promise.all(
+        logs.map(async (log) => {
+          const certId = log.args.certId;
+          const cert = await publicClient.readContract({
+            address: CONTRACT_ADDRESS,
+            abi: CONTRACT_ABI,
+            functionName: "getCertificate",
+            args: [certId],
+          });
+          return { certId: certId.toString(), ...cert };
+        })
+      );
+      setMyCertificates(list);
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
   useEffect(() => {
     refreshTotalCertificates();
 
     if (window.ethereum) {
       const handleAccountsChanged = (accounts) => {
-        setAccount(accounts[0] || "");
+        const nextAccount = accounts[0] || "";
+        setAccount(nextAccount);
+        loadMyCertificates(nextAccount);
       };
       window.ethereum.on("accountsChanged", handleAccountsChanged);
       return () => {
@@ -92,6 +130,7 @@ export default function App() {
       await ensureHardhatNetwork();
       const [addr] = await walletClient.requestAddresses();
       setAccount(addr);
+      await loadMyCertificates(addr);
       setStatusMessage("Wallet connecté au réseau Hardhat Local.");
     } catch (err) {
       setErrorMessage(err.shortMessage || err.message);
@@ -165,6 +204,7 @@ export default function App() {
       await publicClient.waitForTransactionReceipt({ hash });
       setStatusMessage(`Diplôme émis avec succès pour ${mintForm.studentId} !`);
       await refreshTotalCertificates();
+      if (account) await loadMyCertificates(account);
     } catch (err) {
       setErrorMessage(err.shortMessage || err.message);
     } finally {
@@ -199,6 +239,7 @@ export default function App() {
       setStatusMessage(`Révocation envoyée (${hash}). Attente de confirmation...`);
       await publicClient.waitForTransactionReceipt({ hash });
       setStatusMessage(`Certificat #${revokeCertId} révoqué avec succès.`);
+      if (account) await loadMyCertificates(account);
     } catch (err) {
       setErrorMessage(err.shortMessage || err.message);
     } finally {
@@ -233,6 +274,25 @@ export default function App() {
         <div style={{ padding: "0.75rem", background: "#fff1f0", color: "#cf1322", marginBottom: "1rem" }}>
           {errorMessage}
         </div>
+      )}
+
+      {/* Section Étudiant : Mes certificats */}
+      {account && (
+        <section style={{ border: "1px solid #ddd", padding: "1rem", borderRadius: 8, marginBottom: "2rem" }}>
+          <h2>Mes certificats (Wallet connecté)</h2>
+          {myCertificates.length === 0 ? (
+            <p>Aucun diplôme associé à cette adresse.</p>
+          ) : (
+            myCertificates.map((c) => (
+              <div key={c.certId} style={{ background: "#f9f9f9", padding: "0.8rem", borderRadius: 6, marginBottom: "0.6rem" }}>
+                <strong>#{c.certId} — {c.diplomaTitle}</strong> ({c.studentName} | {c.studentId}) —{" "}
+                <span style={{ color: c.revoked ? "#cf1322" : "#237804", fontWeight: "bold" }}>
+                  {c.revoked ? "RÉVOQUÉ" : "VALIDE"}
+                </span>
+              </div>
+            ))
+          )}
+        </section>
       )}
 
       {/* Section 1 : Vérification */}
